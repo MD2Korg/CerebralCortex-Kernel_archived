@@ -207,7 +207,7 @@ def get_rr_and_features(window):
 
 
 
-def get_metadata(data,
+def get_metadata_features_rr(data,
                  wrist='left',
                  sensor_name='motionsensehrv'):
     """
@@ -311,11 +311,129 @@ def compute_quality_features_and_rr(data,
                                             'rr','features','activity',
                                             'start','end'])
 
-    ppg_features_and_rr = data.compute(ppg_features_compute,windowDuration=5,slideDuration=1,startTime='0 seconds')
+    ppg_features_and_rr = data.compute(ppg_features_compute,windowDuration=window_size,slideDuration=int(window_size//2),startTime='0 seconds')
     output_data = ppg_features_and_rr._data
-    ds = DataStream(data=output_data,metadata=get_metadata(data,wrist=wrist,sensor_name=sensor_name))
+    ds = DataStream(data=output_data,metadata=get_metadata_features_rr(data,wrist=wrist,sensor_name=sensor_name))
 
     return ds
+
+
+
+def get_metadata_likelihood(data,
+                 wrist='left',
+                 sensor_name='motionsensehrv'):
+    """
+    :param data: input stream
+    :param wrist: which wrist the data was collected from
+    :param sensor_name: name of sensor
+
+    :return: metadata of output stream
+    """
+    stream_name = "org.md2k."+str(sensor_name)+"."+str(wrist)+".wrist.features.activity.std"
+    stream_metadata = Metadata()
+    stream_metadata.set_name(stream_name).set_description("PPG data quality features and mean RR interval computed from fixed window") \
+        .add_input_stream(data.metadata.get_name()) \
+        .add_dataDescriptor(DataDescriptor().set_name("timestamp").set_type("datetime")) \
+        .add_dataDescriptor(DataDescriptor().set_name("localtime").set_type("datetime")) \
+        .add_dataDescriptor(DataDescriptor().set_name("version").set_type("int")) \
+        .add_dataDescriptor(DataDescriptor().set_name("user").set_type("string")) \
+        .add_dataDescriptor(DataDescriptor().set_name("features").set_type("array")) \
+        .add_dataDescriptor(DataDescriptor().set_name("rr").set_type("array")) \
+        .add_dataDescriptor(DataDescriptor().set_name("activity").set_type("double")) \
+        .add_dataDescriptor(DataDescriptor().set_name("start").set_type("timestamp")) \
+        .add_dataDescriptor(DataDescriptor().set_name("end").set_type("timestamp"))
+
+    stream_metadata.add_module(
+        ModuleMetadata().set_name("PPG data quality features and  mean RR Interval computed from PPG")
+            .set_attribute("url", "http://md2k.org/")
+            .set_author("Md Azim Ullah", "mullah@memphis.edu"))
+    return stream_metadata
+
+
+
+
+
+def get_quality_likelihood(data,
+                           clf,
+                           no_of_ppg_channels = 3,
+                           no_of_quality_features = 4):
+
+
+
+
+    ## helper method
+    def convert_to_array(vals):
+        return vals.reshape(no_of_ppg_channels,no_of_quality_features)
+
+    ## udf
+    schema = StructType([
+        StructField("version", IntegerType()),
+        StructField("user", StringType()),
+        StructField("localtime", TimestampType()),
+        StructField("timestamp", TimestampType()),
+        StructField("likelihood_max", DoubleType()),
+        StructField("rr", DoubleType()),
+        StructField("likelihood_max_array", ArrayType(DoubleType())),
+        StructField("rr_array", ArrayType(DoubleType())),
+        StructField("activity", DoubleType()),
+        StructField("start", TimestampType()),
+        StructField("end", TimestampType()),
+        StructField("features", ArrayType(DoubleType())),
+    ])
+    @pandas_udf(schema, PandasUDFType.GROUPED_MAP)
+    def ppg_likelihood_compute(data):
+        if data.shape[0]>0:
+            data['features'] = data['features'].apply(convert_to_array)
+            acl_features = np.concatenate(list(data['features'])).reshape(-1, no_of_ppg_channels,no_of_quality_features)
+            likelihood = []
+            for k in range(acl_features.shape[1]):
+                tmp = np.nan_to_num(acl_features[:,k,:]).reshape(-1,no_of_quality_features)
+                likelihood.append(clf.predict_proba(tmp)[:,1].reshape(-1,1))
+
+            likelihood = np.concatenate(likelihood,axis=1)
+            rrs = data['rr'].values
+            likelihood_max = []
+            rr = []
+            rr_array = []
+            likelihood_max_array = []
+            for i in range(likelihood.shape[0]):
+                a = likelihood[i,:]
+                likelihood_max_array.append(list(a))
+                rr_array.append(list(rrs[i]))
+                likelihood_max.append(np.max(a))
+                rr.append(rrs[i][np.argmax(a)])
+            data['likelihood_max'] = likelihood_max
+            data['rr'] = rr
+            data['likelihood_max_array'] = likelihood_max_array
+            data['rr_array'] = rr_array
+            data['features'] = data['features'].apply(lambda a:a.reshape(-1))
+            return data
+        else:
+            return pd.DataFrame([],columns=['user','version','timestamp','localtime','likelihood_max',
+                                            'rr','activity','likelihood_max_array','rr_array','start','end','features'])
+
+    ppg_likelihood = data._data.groupBy(['user','version']).apply(ppg_likelihood_compute)
+
+
+
+
+# schema = ppg_likelihood.schema
+# stream_metadata = Metadata()
+# stream_metadata.set_name("org.md2k.motionsensehrv."+indicator+".wrist.quality.std.rr3").set_description("RR from PPG, Signal Quality Likelihood & ACL std")
+# for field in schema.fields:
+#     stream_metadata.add_dataDescriptor(
+#         DataDescriptor().set_name(str(field.name)).set_type(str(field.dataType))
+#     )
+# stream_metadata.add_module(
+#     ModuleMetadata().set_name("PPG RR, Quality Likelihood, ACL std") \
+#         .set_attribute("url", "https://md2k.org").set_author(
+#         "Md Azim Ullah", "mullah@memphis.edu"))
+# stream_metadata.is_valid()
+# ppg_likelihood.printSchema()
+# ppg_likelihood.show(4,False)
+# ds = DataStream(data=ppg_likelihood,metadata=stream_metadata)
+# CC.save_stream(ds,overwrite=True)
+
 
 
 

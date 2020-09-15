@@ -22,22 +22,22 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
-from cerebralcortex.algorithms.ecg.autosense_data_quality import ecg_autosense_data_quality
-from cerebralcortex.algorithms.ecg.autosense_rr_interval import get_rr_interval
-from cerebralcortex.algorithms.ecg.hrv_features import get_hrv_features
-from cerebralcortex.algorithms.stress_prediction.ecg_stress import compute_stress_probability
-from cerebralcortex.algorithms.stress_prediction.stress_episodes import compute_stress_episodes
-from cerebralcortex.algorithms.stress_prediction.stress_imputation import forward_fill_data, impute_stress_likelihood
-from cerebralcortex.algorithms.utils.feature_normalization import normalize_features
+from cerebralcortex.algorithms.ppg.bandpass_filter import bandpass_filter
+from cerebralcortex.algorithms.ppg.cqp_quality_features_and_rr import compute_quality_features_and_rr
 from cerebralcortex.core.datatypes.datastream import DataStream
+import pickle
 
 def stress_from_ppg(data:DataStream,
                     Fs:int=25,
                     low_cutoff:int=.4,
                     high_cutoff:int=3,
-                    model_path="./model/stress_ecg_final.p"):
-
+                    filter_order = 65,
+                    rr_window_size=5.0,
+                    ppg_columns=('red','infrared','green'),
+                    acl_columns=('aclx','acly','aclz'),
+                    wrist='left',
+                    sensor_name='motionsensehrv',
+                    quality_model_path="./model/quality_classifier.p"):
     """
     Compute stress episodes from PPG data
 
@@ -48,18 +48,31 @@ def stress_from_ppg(data:DataStream,
         low_cutoff: minimum pass band frequency
         high_cutoff: maximum pass band frequency
 
+
     Returns:
         DataStream: stress episodes computed from PPG
     """
 
-    # High Frequency Noise Removal
+    # High Frequency Noise Removal using bandpass filtering
 
-    bandpass_filtered_ppg = bandpass_filter(data,Fs=Fs,low_cutoff=low_cutoff,high_cutoff=high_cutoff)
+    bandpass_filtered_ppg = bandpass_filter(data,Fs=Fs,low_cutoff=low_cutoff,
+                                            high_cutoff=high_cutoff,filter_order=filter_order,
+                                            ppg_columns=ppg_columns,acl_columns=acl_columns,
+                                            wrist=wrist,sensor_name=sensor_name)
 
-    # Compute RR intervals
-    ecg_rr = get_rr_interval(ecg_data_with_quality,Fs=Fs)
+    # Compute data quality features and mean RR interval every fixed window of 5 seconds
 
-    # Compute HRV features
+    ppg_quality_features_rr = compute_quality_features_and_rr(bandpass_filtered_ppg,Fs=Fs,
+                                                              window_size=rr_window_size,
+                                                              ppg_columns=('red','infrared','green'),
+                                                              acl_columns=('aclx','acly','aclz'),
+                                                              wrist='left',
+                                                              sensor_name='motionsensehrv')
+
+    # Compute CQP data quality likelihood and remove irrecoverable segments
+    quality_clf  = pickle.load(open(quality_model_path,'rb'))
+
+
     stress_features = get_hrv_features(ecg_rr)
 
     # Normalize features
