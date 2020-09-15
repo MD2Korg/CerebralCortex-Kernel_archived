@@ -76,7 +76,7 @@ def get_metadata(data,
         .add_dataDescriptor(DataDescriptor().set_name("timestamp").set_type("datetime")) \
         .add_dataDescriptor(DataDescriptor().set_name("localtime").set_type("datetime")) \
         .add_dataDescriptor(DataDescriptor().set_name("version").set_type("int")) \
-        .add_dataDescriptor(DataDescriptor().set_name("user").set_type("string")) \
+        .add_dataDescriptor(DataDescriptor().set_name("user").set_type("string"))
 
     for c in ppg_columns:
         stream_metadata.add_dataDescriptor(DataDescriptor().set_name(c).set_type("double").set_attribute("description",
