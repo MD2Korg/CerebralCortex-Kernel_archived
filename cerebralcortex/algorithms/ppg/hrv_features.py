@@ -100,22 +100,16 @@ def get_weighted_rr_features(a,ts,step=3):
     :param step: weighting step
     :return: numpy ndarray containing the features
     """
+    b = np.repeat(a[:,0],np.int64(np.round(100*a[:,1])))
+    features = np.array([np.var(b),iqr(b),np.mean(b),np.median(b),np.percentile(b,80),np.percentile(b,20),60000/np.median(b)])
     m,s = weighted_avg_and_std(deepcopy(a[:,0]), deepcopy(a[:,1]))
     for i in range(a.shape[0]):
         if i<step:
             a[i,0] = np.average(a[:i+1,0],weights=a[:i+1,1]+1e-6)
         else:
             a[i,0] = np.average(a[i-step:i+1,0],weights=a[i-step:i+1,1]+1e-6)
-    p75 = np.percentile(a[:,0],75)
-    p25 = np.percentile(a[:,0],25)
-    p50 = np.percentile(a[:,0],50)
-    p80 = np.percentile(a[:,0],80)
-    p20 = np.percentile(a[:,0],20)
     feature_freq = frequencyDomain(a[:,0]/1000,ts/1000)
-    return np.array([np.var(a[:,0]),p75-p25,
-                     np.std(a[:,0]),np.sqrt(np.mean(np.diff(a[:,0])** 2)),
-                     m,p50,p80,p20,
-                     60000/p50]+list(feature_freq.values()))
+    return np.array(list(features)+list(feature_freq.values()))
 
 def get_metadata(data,
                  wrist='left',
@@ -236,16 +230,14 @@ def get_hrv_features(data,
 
 
 def normalize_features(data,
-                       index_of_first_order_feature =4,
+                       index_of_first_order_feature = 2,
                        lower_percentile=20,
                        higher_percentile=99,
                        minimum_minutes_in_day=60,
                        maximum_acceptable_motion=0.2,
-                       no_features=13,
+                       no_features=10,
                        epsilon = 1e-8,
-                       input_feature_array_name='features',
-                       wrist='left',
-                       sensor_name='motionsensehrv'):
+                       input_feature_array_name='features'):
     """
 
     :param data: input datastream

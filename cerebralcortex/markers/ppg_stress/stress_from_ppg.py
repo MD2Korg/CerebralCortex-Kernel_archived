@@ -24,6 +24,7 @@
 
 from cerebralcortex.algorithms.ppg.bandpass_filter import bandpass_filter
 from cerebralcortex.algorithms.ppg.cqp_quality_features_and_rr import compute_quality_features_and_rr, get_quality_likelihood
+from cerebralcortex.algorithms.ppg.stress_likelihood_computation import compute_stress_probability
 from cerebralcortex.algorithms.ppg.hrv_features import get_hrv_features, normalize_features
 from cerebralcortex.core.datatypes.datastream import DataStream
 import pickle
@@ -39,21 +40,10 @@ def stress_from_ppg(data:DataStream,
                     acl_columns=('aclx','acly','aclz'),
                     wrist='left',
                     sensor_name='motionsensehrv',
-                    quality_model_path="./model/quality_classifier.p"):
-    """
-    Compute stress episodes from PPG data
+                    quality_model_path="./model/quality_classifier.p",
+                    stress_model_path="./model/stress_classifier.p",
+                    feature_index=[0,1,3,4,5,6,8]):
 
-    Args:
-        data (DataStream): dataframe of ppg & accelerometer data with column name specifying the different channels of
-        sensors
-        Fs (int): sampling frequency of
-        low_cutoff: minimum pass band frequency
-        high_cutoff: maximum pass band frequency
-
-
-    Returns:
-        DataStream: stress episodes computed from PPG
-    """
 
     # High Frequency Noise Removal using bandpass filtering
 
@@ -81,11 +71,18 @@ def stress_from_ppg(data:DataStream,
                                                     no_of_quality_features=no_of_quality_features,wrist=wrist,
                                                     sensor_name=sensor_name)
 
+    # compute stress features per minute
     ppg_stress_features = get_hrv_features(ppg_quality_likelihood,wrist=wrist,sensor_name=sensor_name)
 
 
-    ppg_stress_features_normalized = normalize_features(ppg_stress_features,wrist=wrist,sensor_name=sensor_name)
+    # normalize stress features
+    ppg_stress_features_normalized = normalize_features(ppg_stress_features)
 
+    # compute stress probability
+    stress_clf  = pickle.load(open(stress_model_path,'rb'))
+    stress_likelihood = compute_stress_probability(ppg_stress_features,wrist=wrist,sensor_name=sensor_name)
+
+    return stress_likelihood
 
 
     # # Normalize features
@@ -100,5 +97,5 @@ def stress_from_ppg(data:DataStream,
     #
     # # Compute stress episodes
     # stress_episodes = compute_stress_episodes(ecg_stress_probability=ecg_stress_probability_imputed)
-
-    return stress_episodes
+    #
+    # return stress_episodes
