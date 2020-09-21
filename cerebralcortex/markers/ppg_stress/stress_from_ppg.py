@@ -24,6 +24,7 @@
 
 from cerebralcortex.algorithms.ppg.bandpass_filter import bandpass_filter
 from cerebralcortex.algorithms.ppg.cqp_quality_features_and_rr import compute_quality_features_and_rr, get_quality_likelihood
+from cerebralcortex.algorithms.ppg.hrv_features import get_hrv_features, normalize_features
 from cerebralcortex.core.datatypes.datastream import DataStream
 import pickle
 
@@ -80,22 +81,24 @@ def stress_from_ppg(data:DataStream,
                                                     no_of_quality_features=no_of_quality_features,wrist=wrist,
                                                     sensor_name=sensor_name)
 
-    
+    ppg_stress_features = get_hrv_features(ppg_quality_likelihood,wrist=wrist,sensor_name=sensor_name)
+
+
+    ppg_stress_features_normalized = normalize_features(ppg_stress_features,wrist=wrist,sensor_name=sensor_name)
 
 
 
-
-    # Normalize features
-    stress_features_normalized = normalize_features(stress_features,input_feature_array_name='features')
-
-    # Compute stress probability
-    ecg_stress_probability = compute_stress_probability(stress_features_normalized,model_path=model_path)
-
-    # Forward fill and impute stress data
-    ecg_stress_probability_forward_filled = forward_fill_data(ecg_stress_probability)
-    ecg_stress_probability_imputed = impute_stress_likelihood(ecg_stress_probability_forward_filled)
-
-    # Compute stress episodes
-    stress_episodes = compute_stress_episodes(ecg_stress_probability=ecg_stress_probability_imputed)
+    # # Normalize features
+    # stress_features_normalized = normalize_features(stress_features,input_feature_array_name='features')
+    #
+    # # Compute stress probability
+    # ecg_stress_probability = compute_stress_probability(stress_features_normalized,model_path=model_path)
+    #
+    # # Forward fill and impute stress data
+    # ecg_stress_probability_forward_filled = forward_fill_data(ecg_stress_probability)
+    # ecg_stress_probability_imputed = impute_stress_likelihood(ecg_stress_probability_forward_filled)
+    #
+    # # Compute stress episodes
+    # stress_episodes = compute_stress_episodes(ecg_stress_probability=ecg_stress_probability_imputed)
 
     return stress_episodes

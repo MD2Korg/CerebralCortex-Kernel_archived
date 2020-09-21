@@ -1,5 +1,6 @@
 # Copyright (c) 2020, MD2K Center of Excellence
 # All rights reserved.
+# Md Azim Ullah (mullah@memphis.edu)
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -28,8 +29,9 @@ from cerebralcortex.algorithms.utils.mprov_helper import CC_MProvAgg
 from cerebralcortex.core.datatypes import DataStream
 from cerebralcortex.core.metadata_manager.stream.metadata import Metadata, DataDescriptor, \
     ModuleMetadata
-
+from pyspark.sql import functions as F
 from scipy import signal
+
 def filter_data(X,
                 Fs=100,
                 low_cutoff=.4,

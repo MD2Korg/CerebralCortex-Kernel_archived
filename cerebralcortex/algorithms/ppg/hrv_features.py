@@ -1,5 +1,6 @@
 # Copyright (c) 2020, MD2K Center of Excellence
 # All rights reserved.
+# Md Azim Ullah (mullah@memphis.edu)
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -128,7 +129,7 @@ def get_metadata(data,
     """
     stream_name = "org.md2k."+str(sensor_name)+"."+str(wrist)+".stress.features.minute"
     stream_metadata = Metadata()
-    stream_metadata.set_name(stream_name).set_description("PPG data quality likelihood, channel selection and rr interval") \
+    stream_metadata.set_name(stream_name).set_description("Minute level stress features calculated from PPG rr intervals per minute") \
         .add_input_stream(data.metadata.get_name()) \
         .add_dataDescriptor(DataDescriptor().set_name("min").set_type("double")) \
         .add_dataDescriptor(DataDescriptor().set_name("mean").set_type("double")) \
@@ -140,10 +141,11 @@ def get_metadata(data,
         .add_dataDescriptor(DataDescriptor().set_name("version").set_type("int")) \
         .add_dataDescriptor(DataDescriptor().set_name("user").set_type("string")) \
         .add_dataDescriptor(DataDescriptor().set_name("features").set_type("array")) \
-        .add_dataDescriptor(DataDescriptor().set_name("day").set_type("string"))
+        .add_dataDescriptor(DataDescriptor().set_name("day").set_type("string")) \
+        .add_dataDescriptor(DataDescriptor().set_name("activity_values").set_type("array"))
 
     stream_metadata.add_module(
-        ModuleMetadata().set_name("PPG data quality features and  mean RR Interval computed from PPG")
+        ModuleMetadata().set_name("Minute level stress features calculated from PPG rr intervals per minute")
             .set_attribute("url", "http://md2k.org/")
             .set_author("Md Azim Ullah", "mullah@memphis.edu"))
 
@@ -184,19 +186,20 @@ def get_hrv_features(data,
         StructField("user", StringType()),
         StructField('version',DoubleType()),
         StructField("timestamp", TimestampType()),
-        StructField("localtime", TimestampType())
+        StructField("localtime", TimestampType()),
+        StructField("activity_values", ArrayType(DoubleType()))
     ])
     @pandas_udf(schema, PandasUDFType.GROUPED_MAP)
     def get_minute_data(key,df):
         if df.shape[0]<no_of_rr_ints_per_minute*acceptable_rr_ints_per_minute or df.activity.std()<not_wearing_standard_deviation_threshold:
             return pd.DataFrame([],columns=['min','mean','median','start','end','features',
-                                            'user','version','localtime','timestamp'])
+                                            'user','version','localtime','timestamp',"activity_values"])
 
         df['likelihood_max'] = df['likelihood_max'].apply(lambda a:a if a<1 else a-.01)
 
         if df.likelihood_max.mean()<mean_quality_threshold:
             return pd.DataFrame([],columns=['min','mean','median','start','end','features',
-                                            'user','version','localtime','timestamp'])
+                                            'user','version','localtime','timestamp',"activity_values"])
 
         df['time'] = df['time'].apply(lambda a:a*1000)
         df = df.dropna().sort_values('start').reset_index(drop=True)
@@ -206,7 +209,7 @@ def get_hrv_features(data,
         times = ecg[:,2]
         if ecg.shape[0]<no_of_rr_ints_per_minute*acceptable_rr_ints_per_minute:
             return pd.DataFrame([],columns=['min','mean','median','start','end','features',
-                                            'user','version','localtime','timestamp'])
+                                            'user','version','localtime','timestamp',"activity_values"])
         ecg_features = get_weighted_rr_features(ecg[:,:2],times)
         temp = []
         temp.append([df['likelihood_max'].min(),
@@ -218,9 +221,10 @@ def get_hrv_features(data,
                      df.user.values[0],
                      df.version.values[0],
                      df.localtime.values[0],
-                     df.timestamp.values[0]])
+                     df.timestamp.values[0],
+                     np.array(list(df['activity']))])
         return pd.DataFrame(temp,columns=['min','mean','median','start','end','features',
-                                          'user','version','localtime','timestamp'])
+                                          'user','version','localtime','timestamp',"activity_values"])
 
     data = data.withColumn('time',F.col('start').cast('double'))
     win = F.window("timestamp", windowDuration='60 seconds', startTime='0 seconds')
@@ -231,3 +235,64 @@ def get_hrv_features(data,
     return DataStream(data=data_final,metadata=metadata)
 
 
+def normalize_features(data,
+                       index_of_first_order_feature =4,
+                       lower_percentile=20,
+                       higher_percentile=99,
+                       minimum_minutes_in_day=60,
+                       maximum_acceptable_motion=0.2,
+                       no_features=13,
+                       epsilon = 1e-8,
+                       input_feature_array_name='features',
+                       wrist='left',
+                       sensor_name='motionsensehrv'):
+    """
+
+    :param data: input datastream
+    :param index_of_first_order_feature: index of feature column containing mean RR interval
+    :param lower_percentile: lower percentile number of rr intervals
+    :param higher_percentile: higher percentile number of rr intervals
+    :param minimum_minutes_in_day: minutes per day to be present
+    :param maximum_acceptable_motion: maximum acceptable motion per minute to be included in normalization
+    :param no_features: no of features in the features column
+    :param epsilon: epsilon value to avoid zero division
+    :param input_feature_array_name: name of features column
+    :return: normalized features
+    """
+
+    data_day = data.withColumn('day',F.date_format('localtime','yyyyMMdd'))
+    stream_metadata = data.metadata
+    stream_metadata \
+        .add_input_stream(data.metadata.get_name()) \
+        .add_dataDescriptor(
+        DataDescriptor()
+            .set_name("features_normalized")
+            .set_type("array")
+            .set_attribute("description","All features normalized daywise"))
+    data_day = data_day.withColumn('features_normalized',F.col(input_feature_array_name))
+
+    schema = data_day._data.schema
+    @pandas_udf(schema, PandasUDFType.GROUPED_MAP)
+    def normalize_features(data):
+        if len(data)<minimum_minutes_in_day:
+            return pd.DataFrame([], columns=data.columns)
+
+        quals1 = np.array([1] * data.shape[0])
+        feature_matrix = np.array(list(data[input_feature_array_name])).reshape(-1, no_features)
+        ss = np.repeat(feature_matrix[:,index_of_first_order_feature],np.int64(np.round(100*quals1)))
+        rr_70th = np.percentile(ss,lower_percentile)
+        rr_95th = np.percentile(ss,higher_percentile)
+        activity_75th = np.array([np.percentile(a,75) for a in data['activity_values'].values])
+        index = np.where((feature_matrix[:,index_of_first_order_feature]>rr_70th)&
+                         (feature_matrix[:,index_of_first_order_feature]<rr_95th)&
+                         (activity_75th<=maximum_acceptable_motion))[0]
+        for i in range(feature_matrix.shape[1]):
+            m,s = weighted_avg_and_std(feature_matrix[index,i], quals1[index])
+            s+=epsilon
+            feature_matrix[:,i]  = (feature_matrix[:,i] - m)/s
+        data['features_normalized']  = list([np.array(b) for b in feature_matrix])
+        return data
+
+    data_normalized = data_day._data.groupby(['user','day','version']).apply(normalize_features)
+    features = DataStream(data=data_normalized,metadata=stream_metadata)
+    return features
