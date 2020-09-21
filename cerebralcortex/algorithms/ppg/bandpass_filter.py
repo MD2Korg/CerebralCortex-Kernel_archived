@@ -1,6 +1,5 @@
 # Copyright (c) 2020, MD2K Center of Excellence
 # All rights reserved.
-# Md Azim Ullah (mullah@memphis.edu)
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -30,7 +29,6 @@ from cerebralcortex.core.datatypes import DataStream
 from cerebralcortex.core.metadata_manager.stream.metadata import Metadata, DataDescriptor, \
     ModuleMetadata
 
-
 from scipy import signal
 def filter_data(X,
                 Fs=100,
@@ -58,8 +56,8 @@ def filter_data(X,
 def get_metadata(data,
                  wrist='left',
                  sensor_name='motionsensehrv',
-                 ppg_columns=('red','infrared','green'),
-                 acl_columns=('aclx','acly','aclz')):
+                 ppg_columns=['red','infrared','green'],
+                 acl_columns=['aclx','acly','aclz']):
     """
     :param data: input stream
     :param wrist: which wrist the data was collected from

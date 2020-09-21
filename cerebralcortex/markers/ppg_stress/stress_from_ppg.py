@@ -23,7 +23,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from cerebralcortex.algorithms.ppg.bandpass_filter import bandpass_filter
-from cerebralcortex.algorithms.ppg.cqp_quality_features_and_rr import compute_quality_features_and_rr
+from cerebralcortex.algorithms.ppg.cqp_quality_features_and_rr import compute_quality_features_and_rr, get_quality_likelihood
 from cerebralcortex.core.datatypes.datastream import DataStream
 import pickle
 
@@ -33,6 +33,7 @@ def stress_from_ppg(data:DataStream,
                     high_cutoff:int=3,
                     filter_order = 65,
                     rr_window_size=5.0,
+                    no_of_quality_features=4,
                     ppg_columns=('red','infrared','green'),
                     acl_columns=('aclx','acly','aclz'),
                     wrist='left',
@@ -64,16 +65,25 @@ def stress_from_ppg(data:DataStream,
 
     ppg_quality_features_rr = compute_quality_features_and_rr(bandpass_filtered_ppg,Fs=Fs,
                                                               window_size=rr_window_size,
-                                                              ppg_columns=('red','infrared','green'),
-                                                              acl_columns=('aclx','acly','aclz'),
-                                                              wrist='left',
-                                                              sensor_name='motionsensehrv')
+                                                              ppg_columns=ppg_columns,
+                                                              acl_columns=acl_columns,
+                                                              wrist=wrist,
+                                                              sensor_name=sensor_name)
 
     # Compute CQP data quality likelihood and remove irrecoverable segments
     quality_clf  = pickle.load(open(quality_model_path,'rb'))
 
 
-    stress_features = get_hrv_features(ecg_rr)
+    ppg_quality_likelihood = get_quality_likelihood(ppg_quality_features_rr,
+                                                    clf=quality_clf,
+                                                    no_of_ppg_channels=len(ppg_columns),
+                                                    no_of_quality_features=no_of_quality_features,wrist=wrist,
+                                                    sensor_name=sensor_name)
+
+    
+
+
+
 
     # Normalize features
     stress_features_normalized = normalize_features(stress_features,input_feature_array_name='features')

@@ -1,6 +1,5 @@
 # Copyright (c) 2020, MD2K Center of Excellence
 # All rights reserved.
-# Md Azim Ullah (mullah@memphis.edu)
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -141,15 +140,18 @@ def peakdetect(y_axis, x_axis = None, lookahead = 200, delta=0):
 
 ### CQP quality features and heart rate estimation
 
-def get_predict_prob(window):
+def get_predict_prob(window,
+                     Fs=25):
+
     """
     Get CQP quality features
     :param window: Numpy array of PPG data
+    :param Fs: Sampling Frequency
     :return: quality features
     """
     no_channels = window.shape[1]
     window[:,:] = signal.detrend(RobustScaler().fit_transform(window),axis=0)
-    f,pxx = signal.welch(window,fs=25,nperseg=len(window),nfft=10000,axis=0)
+    f,pxx = signal.welch(window,fs=Fs,nperseg=len(window),nfft=10000,axis=0)
     pxx = np.abs(pxx)
     pxx = MinMaxScaler().fit_transform(pxx)
     skews = skew(window,axis=0).reshape(no_channels,1)
@@ -159,16 +161,17 @@ def get_predict_prob(window):
     features = np.concatenate([skews,kurs,rps,iqrs],axis=1)
     return features
 
-def get_rr_value(values,fs=25):
+def get_rr_value(values,Fs=25,nfft=10000):
     """
     Get Mean RR interval
 
     :param values: single channel ppg data
-    :param fs: sampling frequency
+    :param Fs: sampling frequency
+    :param nfft: FFT no. of points
     :return: Mean RR interval Information
     """
     try:
-        f, pxx = signal.welch(values,fs=fs,nperseg=values.shape[0],nfft=10000,axis=0)
+        f, pxx = signal.welch(values,fs=Fs,nperseg=values.shape[0],nfft=nfft,axis=0)
         f = f.reshape(-1)
         pxx = pxx.reshape(-1,1)
         peakind =  peakdetect(pxx[:,0],lookahead=2)
@@ -187,23 +190,24 @@ def get_rr_value(values,fs=25):
         return 0
 
 
-def get_rr_and_features(window):
+def get_rr_and_features(window,
+                        Fs=25):
     """
 
-    :param window:
+    :param window: Data
+    :param Fs: Sampling Frequency
     :return: tuple of mean RR interval and Quality features calculated
     """
     no_channels = window.shape[1]
+    no_of_features = 4
     starts = [0]
-    ends = [125]
     rrs = []
     features= []
     for i,s in enumerate(starts):
-        e = ends[i]
         for j in range(window.shape[1]):
-            rrs.append(get_rr_value(window[s:,j]))
-        features.append(get_predict_prob(window[s:e,:]).reshape(1,no_channels,4))
-    return np.array(rrs),np.concatenate(features).reshape(no_channels,4)
+            rrs.append(get_rr_value(window[s:,j],Fs=Fs))
+        features.append(get_predict_prob(window[s:,:],Fs=Fs).reshape(1,no_channels,no_of_features))
+    return np.array(rrs),np.concatenate(features).reshape(no_channels,no_of_features)
 
 
 
@@ -217,7 +221,7 @@ def get_metadata_features_rr(data,
 
     :return: metadata of output stream
     """
-    stream_name = "org.md2k."+str(sensor_name)+"."+str(wrist)+".wrist.features.activity.std"
+    stream_name = "org.md2k."+str(sensor_name)+"."+str(wrist)+".wrist.features.activity.std.rr"
     stream_metadata = Metadata()
     stream_metadata.set_name(stream_name).set_description("PPG data quality features and mean RR interval computed from fixed window") \
         .add_input_stream(data.metadata.get_name()) \
@@ -242,8 +246,8 @@ def compute_quality_features_and_rr(data,
                                     Fs=25,
                                     window_size=5.0,
                                     acceptable_percentage=0.8,
-                                    ppg_columns=('red','infrared','green'),
-                                    acl_columns=('aclx','acly','aclz'),
+                                    ppg_columns=['red','infrared','green'],
+                                    acl_columns=['aclx','acly','aclz'],
                                     wrist='left',
                                     sensor_name='motionsensehrv'):
     """
@@ -290,7 +294,7 @@ def compute_quality_features_and_rr(data,
             rows.append(data['version'].loc[0])
             rows.append(data['timestamp'].loc[0])
             rows.append(data['localtime'].loc[0])
-            rrs , features = get_rr_and_features(data[list(ppg_columns)].values.reshape(-1,len(ppg_columns)))
+            rrs , features = get_rr_and_features(data[list(ppg_columns)].values.reshape(-1,len(ppg_columns)),Fs=Fs)
             rows.append(rrs)
             rows.append(features.reshape(-1))
             data_acl = data[list(acl_columns)]
@@ -329,16 +333,19 @@ def get_metadata_likelihood(data,
 
     :return: metadata of output stream
     """
-    stream_name = "org.md2k."+str(sensor_name)+"."+str(wrist)+".wrist.features.activity.std"
+    stream_name = "org.md2k."+str(sensor_name)+"."+str(wrist)+".wrist.likelihood.activity.std.rr"
     stream_metadata = Metadata()
-    stream_metadata.set_name(stream_name).set_description("PPG data quality features and mean RR interval computed from fixed window") \
+    stream_metadata.set_name(stream_name).set_description("PPG data quality likelihood, channel selection and rr interval") \
         .add_input_stream(data.metadata.get_name()) \
         .add_dataDescriptor(DataDescriptor().set_name("timestamp").set_type("datetime")) \
         .add_dataDescriptor(DataDescriptor().set_name("localtime").set_type("datetime")) \
         .add_dataDescriptor(DataDescriptor().set_name("version").set_type("int")) \
         .add_dataDescriptor(DataDescriptor().set_name("user").set_type("string")) \
         .add_dataDescriptor(DataDescriptor().set_name("features").set_type("array")) \
-        .add_dataDescriptor(DataDescriptor().set_name("rr").set_type("array")) \
+        .add_dataDescriptor(DataDescriptor().set_name("rr").set_type("double")) \
+        .add_dataDescriptor(DataDescriptor().set_name("rr_array").set_type("array")) \
+        .add_dataDescriptor(DataDescriptor().set_name("likelihood_max").set_type("double")) \
+        .add_dataDescriptor(DataDescriptor().set_name("likelihood_max_array").set_type("array")) \
         .add_dataDescriptor(DataDescriptor().set_name("activity").set_type("double")) \
         .add_dataDescriptor(DataDescriptor().set_name("start").set_type("timestamp")) \
         .add_dataDescriptor(DataDescriptor().set_name("end").set_type("timestamp"))
@@ -356,14 +363,26 @@ def get_metadata_likelihood(data,
 def get_quality_likelihood(data,
                            clf,
                            no_of_ppg_channels = 3,
-                           no_of_quality_features = 4):
+                           no_of_quality_features = 4,
+                           wrist='left',
+                           sensor_name='motionsensehrv'):
+    """
 
-
+    :param data: input data
+    :param clf: classifier for quality classification
+    :param no_of_ppg_channels: no of PPG channels
+    :param no_of_quality_features: No. of features in PPG quality estimation
+    :param wrist: wrist on which sensor is worn
+    :param sensor_name: name of sensor
+    :return: Datastream with
+    """
+    if 'features' not in data.columns or 'rr' not in data.columns:
+        raise Exception("Required columns not present, Please fix it!")
 
 
     ## helper method
     def convert_to_array(vals):
-        return vals.reshape(no_of_ppg_channels,no_of_quality_features)
+        return np.array(vals).reshape(no_of_ppg_channels,no_of_quality_features)
 
     ## udf
     schema = StructType([
@@ -392,6 +411,7 @@ def get_quality_likelihood(data,
 
             likelihood = np.concatenate(likelihood,axis=1)
             rrs = data['rr'].values
+            rrs = np.array([np.array(a) for a in rrs])
             likelihood_max = []
             rr = []
             rr_array = []
@@ -413,26 +433,8 @@ def get_quality_likelihood(data,
                                             'rr','activity','likelihood_max_array','rr_array','start','end','features'])
 
     ppg_likelihood = data._data.groupBy(['user','version']).apply(ppg_likelihood_compute)
-
-
-
-
-# schema = ppg_likelihood.schema
-# stream_metadata = Metadata()
-# stream_metadata.set_name("org.md2k.motionsensehrv."+indicator+".wrist.quality.std.rr3").set_description("RR from PPG, Signal Quality Likelihood & ACL std")
-# for field in schema.fields:
-#     stream_metadata.add_dataDescriptor(
-#         DataDescriptor().set_name(str(field.name)).set_type(str(field.dataType))
-#     )
-# stream_metadata.add_module(
-#     ModuleMetadata().set_name("PPG RR, Quality Likelihood, ACL std") \
-#         .set_attribute("url", "https://md2k.org").set_author(
-#         "Md Azim Ullah", "mullah@memphis.edu"))
-# stream_metadata.is_valid()
-# ppg_likelihood.printSchema()
-# ppg_likelihood.show(4,False)
-# ds = DataStream(data=ppg_likelihood,metadata=stream_metadata)
-# CC.save_stream(ds,overwrite=True)
+    metadata = get_metadata_likelihood(data,wrist=wrist,sensor_name=sensor_name)
+    return DataStream(data=ppg_likelihood,metadata=metadata)
 
 
 
