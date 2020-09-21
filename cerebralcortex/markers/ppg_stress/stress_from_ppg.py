@@ -80,7 +80,7 @@ def stress_from_ppg(data:DataStream,
 
     # compute stress probability
     stress_clf  = pickle.load(open(stress_model_path,'rb'))
-    stress_likelihood = compute_stress_probability(ppg_stress_features,wrist=wrist,sensor_name=sensor_name)
+    stress_likelihood = compute_stress_probability(ppg_stress_features,wrist=wrist,sensor_name=sensor_name,feature_index=feature_index)
 
     return stress_likelihood
 
