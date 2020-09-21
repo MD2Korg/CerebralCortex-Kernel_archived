@@ -97,8 +97,8 @@ def bandpass_filter(
                    low_cutoff = 0.4,
                    high_cutoff = 3.0,
                    filter_order = 65,
-                   ppg_columns=('red','infrared','green'),
-                   acl_columns=('aclx','acly','aclz'),
+                   ppg_columns=['red','infrared','green'],
+                   acl_columns=['aclx','acly','aclz'],
                    wrist='left',
                    sensor_name='motionsensehrv'):
 
