@@ -16,7 +16,7 @@ reqs = [
     'hdfs3==0.3.0',
     'pyspark==3.0.0',
     'msgpack==0.6.1',
-    'PyJWT==1.7.1',
+    'PyJWT==2.4.0',
     'pandas==1.0.5',
     'texttable',
     'numpy==1.19.1',
