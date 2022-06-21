@@ -19,7 +19,7 @@ reqs = [
     'PyJWT==1.7.1',
     'pandas==1.0.5',
     'texttable',
-    'numpy==1.19.1',
+    'numpy==1.22.0',
     'geopy==1.18.1',
     'scikit-learn==0.22.2.post1',
     'plotly==4.9.0',
